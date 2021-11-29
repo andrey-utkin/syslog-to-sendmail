@@ -1,0 +1,44 @@
+#!/bin/bash
+
+# syslog-to-sendmail - sends syslog stream as emails via local MTA
+# 
+# Written in 2021 by Andriy Utkin <andrey_utkin@fastmail.com>
+# 
+# To the extent possible under law, the author(s) have dedicated all copyright and related and
+# neighboring rights to this software to the public domain worldwide. This software is distributed
+# without any warranty.
+# 
+# You should have received a copy of the CC0 Public Domain Dedication along with this software.
+# If not, see <http://creativecommons.org/publicdomain/zero/1.0/>. 
+
+# Takes endless logs stream from stdin and sends small batches of lines as emails using local MTA.
+# The original and most notable usecase is telling a syslog daemon to send emails.
+# Usage: $0 [subject] [from] [to...]
+# Example for syslog-ng:
+# destination mta { program("syslog-to-sendmail"); };
+# filter f_error { level(error .. emerg); };
+# log { source(src); filter(f_error); destination(mta); };
+
+SUBJECT=${1:-alert}
+FROM=${2:-syslog@$(hostname -f)}
+TO=${3:-root}
+
+while true; do
+	# Collect up to 10 lines if they go in bursts.
+	# The burst ends when a new line hasn't come in 1 second.
+	BATCH=
+	for i in {0..10}; do
+		read -r -t 1 LOGLINE
+		if [[ -z "$LOGLINE" ]]; then
+			break
+		fi
+		BATCH="$BATCH\n$LOGLINE"
+	done
+	if [[ -z $BATCH ]]; then
+		continue
+	fi
+
+	# $TO deliberately unquoted to allow multiple recipients
+	BODY="Subject: $SUBJECT\nFrom: $FROM\n$BATCH"
+	echo -e "$BODY" | sendmail $TO	
+done
